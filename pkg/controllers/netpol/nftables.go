@@ -120,7 +120,7 @@ const (
 		ip protocol icmp accept
 		{{if .LocalIp4}}ip saddr { {{range .LocalIp4}}{{.}},{{end}} } accept{{end}}
 	{{end}}
-	{{define "markforreject"}}nftrace set 1 mark set 32760{{end}}
+	{{define "markforreject"}}nftrace set 1 mark set 32760 accept{{end}}
 	{{define "reject"}}nftrace set 1 reject{{end}}
 	{{define "drop"}}nftrace set 1 drop{{end}}
 
