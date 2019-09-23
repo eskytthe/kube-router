@@ -158,7 +158,7 @@ func (npc *NetworkPolicyController) Run(healthChan chan<- *healthcheck.Controlle
 // OnPodUpdate handles updates to pods from the Kubernetes api server
 func (npc *NetworkPolicyController) OnPodUpdate(obj interface{}) {
 	pod := obj.(*api.Pod)
-	glog.V(2).Infof("Received update to pod: %s/%s", pod.Namespace, pod.Name)
+	glog.V(1).Infof("Received update to pod: %s/%s", pod.Namespace, pod.Name)
 
 	if !npc.readyForUpdates {
 		glog.V(3).Infof("Skipping update to pod: %s/%s, controller still performing bootup full-sync", pod.Namespace, pod.Name)
@@ -174,7 +174,7 @@ func (npc *NetworkPolicyController) OnPodUpdate(obj interface{}) {
 // OnNetworkPolicyUpdate handles updates to network policy from the kubernetes api server
 func (npc *NetworkPolicyController) OnNetworkPolicyUpdate(obj interface{}) {
 	netpol := obj.(*networking.NetworkPolicy)
-	glog.V(2).Infof("Received update for network policy: %s/%s", netpol.Namespace, netpol.Name)
+	glog.V(1).Infof("Received update for network policy: %s/%s", netpol.Namespace, netpol.Name)
 
 	if !npc.readyForUpdates {
 		glog.V(3).Infof("Skipping update to network policy: %s/%s, controller still performing bootup full-sync", netpol.Namespace, netpol.Name)
@@ -194,7 +194,7 @@ func (npc *NetworkPolicyController) OnNamespaceUpdate(obj interface{}) {
 	if npc.v1NetworkPolicy {
 		return
 	}
-	glog.V(2).Infof("Received update for namespace: %s", namespace.Name)
+	glog.V(1).Infof("Received update for namespace: %s", namespace.Name)
 
 	err := npc.Sync()
 	if err != nil {
@@ -240,6 +240,8 @@ func (npc *NetworkPolicyController) Sync() error {
 	if err != nil {
 		return errors.New("Aborting sync. Failed to build egress pods: " + err.Error())
 	}
+
+	glog.V(1).Infof("nwplcy: fetching data from apiserver took %v", time.Since(start))
 
 	// delegate actual sync to the handler
 	return npc.handler.Sync(npc.networkPoliciesInfo, ingressPods, egressPods)

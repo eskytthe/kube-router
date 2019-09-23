@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 	"text/template"
+	"time"
 )
 
 const (
@@ -175,8 +176,9 @@ func (nft *NFTables) Sync(networkPoliciesInfo *[]NetworkPolicyInfo, ingressPods,
 	if nft.dead {
 		return errors.New("Cannot sync nftables with a killed NFTable handler")
 	}
+	var t = time.Now()
 
-	glog.V(2).Infof("Flushing nftables configuration to file: %s", NFTABLES_FILE)
+	glog.V(1).Infof("nwplcy: starting nft sync")
 
 	ip4, ip6, err := getLocalAddrs()
 	if err != nil {
@@ -185,6 +187,9 @@ func (nft *NFTables) Sync(networkPoliciesInfo *[]NetworkPolicyInfo, ingressPods,
 
 	file, _ := os.Create(NFTABLES_FILE)
 	defer file.Close()
+
+	glog.V(1).Infof("nwplcy: before templating, init took: %v", time.Since(t))
+	t = time.Now()
 	writer := bufio.NewWriter(file)
 	err = nft.Generate(writer, &NFTablesInfo{
 		IngressPods: *ingressPods,
@@ -197,9 +202,15 @@ func (nft *NFTables) Sync(networkPoliciesInfo *[]NetworkPolicyInfo, ingressPods,
 	if err != nil {
 		return err
 	}
+	glog.V(1).Infof("nwplcy: templating done, it took: %v, before flush to file: %s", time.Since(t), NFTABLES_FILE)
+	t = time.Now()
 	writer.Flush()
 
-	return nft.execNftablesCmd("-f", NFTABLES_FILE)
+	glog.V(1).Infof("nwplcy: flushing done, it took: %v, before exec nft", time.Since(t))
+	t = time.Now()
+	foo := nft.execNftablesCmd("-f", NFTABLES_FILE)
+	glog.V(1).Infof("nwplcy: after exec nft, exec took: %v", time.Since(t))
+	return foo
 }
 
 func (nft *NFTables) Generate(writer *bufio.Writer, info *NFTablesInfo) error {
