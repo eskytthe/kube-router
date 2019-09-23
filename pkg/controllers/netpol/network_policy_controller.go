@@ -59,6 +59,8 @@ type NetworkPolicyController struct {
 	PodEventHandler           cache.ResourceEventHandler
 	NamespaceEventHandler     cache.ResourceEventHandler
 	NetworkPolicyEventHandler cache.ResourceEventHandler
+
+	updateInProgress bool
 }
 
 // internal structure to represent a network policy
@@ -202,12 +204,27 @@ func (npc *NetworkPolicyController) OnNamespaceUpdate(obj interface{}) {
 	}
 }
 
-// Sync synchronizes iptables to desired state of network policies
 func (npc *NetworkPolicyController) Sync() error {
+	var err error
+
+	npc.mu.Lock()
+	if npc.updateInProgress {
+		glog.V(1).Infof("nwplcy: skipping update, since it's already in progress")
+	} else {
+		npc.updateInProgress = true
+		npc.mu.Unlock()
+		err = npc.doSync()
+		npc.mu.Lock()
+		npc.updateInProgress = false
+	}
+	npc.mu.Unlock()
+	return err
+}
+
+// Sync synchronizes iptables to desired state of network policies
+func (npc *NetworkPolicyController) doSync() error {
 
 	var err error
-	npc.mu.Lock()
-	defer npc.mu.Unlock()
 
 	start := time.Now()
 	defer func() {
