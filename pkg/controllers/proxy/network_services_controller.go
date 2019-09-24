@@ -3,6 +3,7 @@ package proxy
 import (
 	"errors"
 	"fmt"
+	"github.com/cloudnativelabs/kube-router/pkg/controllers/netpol"
 	"hash/fnv"
 	"io/ioutil"
 	"math/rand"
@@ -269,7 +270,7 @@ type endpointsInfo struct {
 type endpointsInfoMap map[string][]endpointsInfo
 
 // Run periodically sync ipvs configuration to reflect desired state of services and endpoints
-func (nsc *NetworkServicesController) Run(healthChan chan<- *healthcheck.ControllerHeartbeat, stopCh <-chan struct{}, wg *sync.WaitGroup) error {
+func (nsc *NetworkServicesController) Run(healthChan chan<- *healthcheck.ControllerHeartbeat, stopCh <-chan struct{}, wg *sync.WaitGroup, npc *netpol.NetworkPolicyController) error {
 
 	t := time.NewTicker(nsc.syncPeriod)
 	defer t.Stop()
@@ -346,6 +347,13 @@ func (nsc *NetworkServicesController) Run(healthChan chan<- *healthcheck.Control
 			glog.Errorf("Skipping sending heartbeat from network service controller as periodic sync failed.")
 		} else {
 			healthcheck.SendHeartBeat(healthChan, "NSC")
+		}
+		err = npc.Sync()
+		if err != nil {
+			glog.Errorf("Error during sync of network policies: " + err.Error())
+		} else {
+			// fake the healthcheck for the npc controller as well
+			healthcheck.SendHeartBeat(healthChan, "NPC")
 		}
 		nsc.readyForUpdates = true
 		select {

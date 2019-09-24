@@ -127,19 +127,23 @@ func (kr *KubeRouter) Run() error {
 		kr.Config.MetricsEnabled = false
 	}
 
+	var npc *netpol.NetworkPolicyController
 	if kr.Config.RunFirewall {
-		npc, err := netpol.NewNetworkPolicyController(kr.Client,
+		var err error
+		npc, err = netpol.NewNetworkPolicyController(kr.Client,
 			kr.Config, podInformer, npInformer, nsInformer)
 		if err != nil {
 			return errors.New("Failed to create network policy controller: " + err.Error())
 		}
-
+		/*
 		podInformer.AddEventHandler(npc.PodEventHandler)
 		nsInformer.AddEventHandler(npc.NamespaceEventHandler)
 		npInformer.AddEventHandler(npc.NetworkPolicyEventHandler)
 
 		wg.Add(1)
+
 		go npc.Run(healthChan, stopCh, &wg)
+		 */
 	}
 
 	if kr.Config.RunRouter {
@@ -167,7 +171,7 @@ func (kr *KubeRouter) Run() error {
 		epInformer.AddEventHandler(nsc.EndpointsEventHandler)
 
 		wg.Add(1)
-		go nsc.Run(healthChan, stopCh, &wg)
+		go nsc.Run(healthChan, stopCh, &wg, npc)
 	}
 
 	// Handle SIGINT and SIGTERM
