@@ -205,7 +205,6 @@ type NetworkServicesController struct {
 	nodeIP              net.IP
 	nodeHostName        string
 	syncPeriod          time.Duration
-	mu                  sync.Mutex
 	serviceMap          serviceInfoMap
 	endpointsMap        endpointsInfoMap
 	podCidr             string
@@ -226,6 +225,7 @@ type NetworkServicesController struct {
 
 	ServiceEventHandler   cache.ResourceEventHandler
 	EndpointsEventHandler cache.ResourceEventHandler
+	syncQueue             *utils.Queue
 }
 
 // internal representation of kubernetes service
@@ -340,14 +340,19 @@ func (nsc *NetworkServicesController) Run(healthChan chan<- *healthcheck.Control
 		}
 
 		glog.V(1).Info("Performing periodic sync of ipvs services")
-		err := nsc.sync()
-		if err != nil {
-			glog.Errorf("Error during periodic ipvs sync in network service controller. Error: " + err.Error())
-			glog.Errorf("Skipping sending heartbeat from network service controller as periodic sync failed.")
-		} else {
-			healthcheck.SendHeartBeat(healthChan, "NSC")
-		}
-		nsc.readyForUpdates = true
+		nsc.syncQueue.Push(&utils.QueueItem{
+			Identifier: "NSC-PERIODIC",
+			Todo:       nsc.sync,
+			Callback: func(err error) {
+				if err != nil {
+					glog.Errorf("Error during periodic ipvs sync in network service controller. Error: " + err.Error())
+					glog.Errorf("Skipping sending heartbeat from network service controller as periodic sync failed.")
+				} else {
+					healthcheck.SendHeartBeat(healthChan, "NSC")
+				}
+				nsc.readyForUpdates = true
+			},
+		})
 		select {
 		case <-stopCh:
 			glog.Info("Shutting down network services controller")
@@ -359,8 +364,6 @@ func (nsc *NetworkServicesController) Run(healthChan chan<- *healthcheck.Control
 
 func (nsc *NetworkServicesController) sync() error {
 	var err error
-	nsc.mu.Lock()
-	defer nsc.mu.Unlock()
 
 	err = ensureMasqueradeIptablesRule(nsc.masqueradeAll, nsc.podCidr)
 	// enable masquerade rule
@@ -719,21 +722,27 @@ func (nsc *NetworkServicesController) OnEndpointsUpdate(obj interface{}) {
 		glog.V(3).Infof("Skipping update to endpoint: %s/%s, controller still performing bootup full-sync", ep.Namespace, ep.Name)
 		return
 	}
-	nsc.mu.Lock()
-	defer nsc.mu.Unlock()
 
-	// build new service and endpoints map to reflect the change
-	newServiceMap := nsc.buildServicesInfo()
-	newEndpointsMap := nsc.buildEndpointsInfo()
+	nsc.syncQueue.Push(&utils.QueueItem{
+		Identifier: "NSC-ENDPOINT-UPDATE",
+		Todo: func() error {
+			// build new service and endpoints map to reflect the change
+			newServiceMap := nsc.buildServicesInfo()
+			newEndpointsMap := nsc.buildEndpointsInfo()
 
-	if len(newEndpointsMap) != len(nsc.endpointsMap) || !reflect.DeepEqual(newEndpointsMap, nsc.endpointsMap) {
-		nsc.endpointsMap = newEndpointsMap
-		nsc.serviceMap = newServiceMap
-		glog.V(1).Infof("Syncing IPVS services sync for update to endpoint: %s/%s", ep.Namespace, ep.Name)
-		nsc.syncIpvsServices(nsc.serviceMap, nsc.endpointsMap)
-	} else {
-		glog.V(1).Infof("Skipping IPVS services sync on endpoint: %s/%s update as nothing changed", ep.Namespace, ep.Name)
-	}
+			if len(newEndpointsMap) != len(nsc.endpointsMap) || !reflect.DeepEqual(newEndpointsMap, nsc.endpointsMap) {
+				nsc.endpointsMap = newEndpointsMap
+				nsc.serviceMap = newServiceMap
+				glog.V(1).Infof("Syncing IPVS services sync for update to endpoint: %s/%s", ep.Namespace, ep.Name)
+				nsc.syncIpvsServices(nsc.serviceMap, nsc.endpointsMap)
+			} else {
+				glog.V(1).Infof("Skipping IPVS services sync on endpoint: %s/%s update as nothing changed", ep.Namespace, ep.Name)
+			}
+
+			return nil
+		},
+		Callback: func(err error) {},
+	})
 }
 
 // OnServiceUpdate handle change in service update from the API server
@@ -749,21 +758,27 @@ func (nsc *NetworkServicesController) OnServiceUpdate(obj interface{}) {
 		glog.V(3).Infof("Skipping update to service: %s/%s, controller still performing bootup full-sync", svc.Namespace, svc.Name)
 		return
 	}
-	nsc.mu.Lock()
-	defer nsc.mu.Unlock()
 
-	// build new service and endpoints map to reflect the change
-	newServiceMap := nsc.buildServicesInfo()
-	newEndpointsMap := nsc.buildEndpointsInfo()
+	nsc.syncQueue.Push(&utils.QueueItem{
+		Identifier: "NSC-SERVICE-UPDATE",
+		Todo: func() error {
+			// build new service and endpoints map to reflect the change
+			newServiceMap := nsc.buildServicesInfo()
+			newEndpointsMap := nsc.buildEndpointsInfo()
 
-	if len(newServiceMap) != len(nsc.serviceMap) || !reflect.DeepEqual(newServiceMap, nsc.serviceMap) {
-		nsc.endpointsMap = newEndpointsMap
-		nsc.serviceMap = newServiceMap
-		glog.V(1).Infof("Syncing IPVS services sync on update to service: %s/%s", svc.Namespace, svc.Name)
-		nsc.syncIpvsServices(nsc.serviceMap, nsc.endpointsMap)
-	} else {
-		glog.V(1).Infof("Skipping syncing IPVS services for update to service: %s/%s as nothing changed", svc.Namespace, svc.Name)
-	}
+			if len(newServiceMap) != len(nsc.serviceMap) || !reflect.DeepEqual(newServiceMap, nsc.serviceMap) {
+				nsc.endpointsMap = newEndpointsMap
+				nsc.serviceMap = newServiceMap
+				glog.V(1).Infof("Syncing IPVS services sync on update to service: %s/%s", svc.Namespace, svc.Name)
+				nsc.syncIpvsServices(nsc.serviceMap, nsc.endpointsMap)
+			} else {
+				glog.V(1).Infof("Skipping syncing IPVS services for update to service: %s/%s as nothing changed", svc.Namespace, svc.Name)
+			}
+
+			return nil
+		},
+		Callback: func(err error) {},
+	})
 }
 
 type externalIPService struct {
@@ -2316,7 +2331,7 @@ func (nsc *NetworkServicesController) newSvcEventHandler() cache.ResourceEventHa
 // NewNetworkServicesController returns NetworkServicesController object
 func NewNetworkServicesController(clientset kubernetes.Interface,
 	config *options.KubeRouterConfig, svcInformer cache.SharedIndexInformer,
-	epInformer cache.SharedIndexInformer, podInformer cache.SharedIndexInformer) (*NetworkServicesController, error) {
+	epInformer cache.SharedIndexInformer, podInformer cache.SharedIndexInformer, syncQueue *utils.Queue) (*NetworkServicesController, error) {
 
 	var err error
 	ln, err := newLinuxNetworking()
@@ -2343,6 +2358,7 @@ func NewNetworkServicesController(clientset kubernetes.Interface,
 	}
 
 	nsc.syncPeriod = config.IpvsSyncPeriod
+	nsc.syncQueue = syncQueue
 	nsc.globalHairpin = config.GlobalHairpinMode
 
 	nsc.serviceMap = make(serviceInfoMap)

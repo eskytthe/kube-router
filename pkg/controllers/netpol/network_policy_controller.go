@@ -42,7 +42,6 @@ import (
 type NetworkPolicyController struct {
 	nodeIP          net.IP
 	nodeHostName    string
-	mu              sync.Mutex
 	syncPeriod      time.Duration
 	MetricsEnabled  bool
 	v1NetworkPolicy bool
@@ -59,6 +58,7 @@ type NetworkPolicyController struct {
 	PodEventHandler           cache.ResourceEventHandler
 	NamespaceEventHandler     cache.ResourceEventHandler
 	NetworkPolicyEventHandler cache.ResourceEventHandler
+	syncQueue                 *utils.Queue
 }
 
 // internal structure to represent a network policy
@@ -138,14 +138,19 @@ func (npc *NetworkPolicyController) Run(healthChan chan<- *healthcheck.Controlle
 		}
 
 		glog.V(1).Info("Performing periodic sync to reflect network policies")
-		err := npc.Sync()
-		if err != nil {
-			glog.Errorf("Error during periodic sync of network policies in network policy controller. Error: " + err.Error())
-			glog.Errorf("Skipping sending heartbeat from network policy controller as periodic sync failed.")
-		} else {
-			healthcheck.SendHeartBeat(healthChan, "NPC")
-		}
-		npc.readyForUpdates = true
+		npc.syncQueue.Push(&utils.QueueItem{
+			Identifier: "NPC-PERIODIC",
+			Todo:       npc.sync,
+			Callback: func(err error) {
+				if err != nil {
+					glog.Errorf("Error during periodic sync of network policies in network policy controller. Error: " + err.Error())
+					glog.Errorf("Skipping sending heartbeat from network policy controller as periodic sync failed.")
+				} else {
+					healthcheck.SendHeartBeat(healthChan, "NPC")
+				}
+				npc.readyForUpdates = true
+			},
+		})
 		select {
 		case <-stopCh:
 			glog.Infof("Shutting down network policies controller")
@@ -165,10 +170,15 @@ func (npc *NetworkPolicyController) OnPodUpdate(obj interface{}) {
 		return
 	}
 
-	err := npc.Sync()
-	if err != nil {
-		glog.Errorf("Error syncing network policy for the update to pod: %s/%s Error: %s", pod.Namespace, pod.Name, err)
-	}
+	npc.syncQueue.Push(&utils.QueueItem{
+		Identifier: "NPC-SYNC",
+		Todo:       npc.sync,
+		Callback: func(err error) {
+			if err != nil {
+				glog.Errorf("Error syncing network policy for the update to pod: %s/%s Error: %s", pod.Namespace, pod.Name, err)
+			}
+		},
+	})
 }
 
 // OnNetworkPolicyUpdate handles updates to network policy from the kubernetes api server
@@ -181,10 +191,15 @@ func (npc *NetworkPolicyController) OnNetworkPolicyUpdate(obj interface{}) {
 		return
 	}
 
-	err := npc.Sync()
-	if err != nil {
-		glog.Errorf("Error syncing network policy for the update to network policy: %s/%s Error: %s", netpol.Namespace, netpol.Name, err)
-	}
+	npc.syncQueue.Push(&utils.QueueItem{
+		Identifier: "NPC-SYNC",
+		Todo:       npc.sync,
+		Callback: func(err error) {
+			if err != nil {
+				glog.Errorf("Error syncing network policy for the update to network policy: %s/%s Error: %s", netpol.Namespace, netpol.Name, err)
+			}
+		},
+	})
 }
 
 // OnNamespaceUpdate handles updates to namespace from kubernetes api server
@@ -196,18 +211,21 @@ func (npc *NetworkPolicyController) OnNamespaceUpdate(obj interface{}) {
 	}
 	glog.V(1).Infof("Received update for namespace: %s", namespace.Name)
 
-	err := npc.Sync()
-	if err != nil {
-		glog.Errorf("Error syncing on namespace update: %s", err)
-	}
+	npc.syncQueue.Push(&utils.QueueItem{
+		Identifier: "NPC-SYNC",
+		Todo:       npc.sync,
+		Callback: func(err error) {
+			if err != nil {
+				glog.Errorf("Error syncing on namespace update: %s", err)
+			}
+		},
+	})
 }
 
 // Sync synchronizes iptables to desired state of network policies
-func (npc *NetworkPolicyController) Sync() error {
+func (npc *NetworkPolicyController) sync() error {
 
 	var err error
-	npc.mu.Lock()
-	defer npc.mu.Unlock()
 
 	start := time.Now()
 	defer func() {
@@ -686,7 +704,7 @@ func (npc *NetworkPolicyController) newNetworkPolicyEventHandler() cache.Resourc
 // NewNetworkPolicyController returns new NetworkPolicyController object
 func NewNetworkPolicyController(clientset kubernetes.Interface,
 	config *options.KubeRouterConfig, podInformer cache.SharedIndexInformer,
-	npInformer cache.SharedIndexInformer, nsInformer cache.SharedIndexInformer) (*NetworkPolicyController, error) {
+	npInformer cache.SharedIndexInformer, nsInformer cache.SharedIndexInformer, syncQueue *utils.Queue) (*NetworkPolicyController, error) {
 	npc := NetworkPolicyController{}
 
 	if config.MetricsEnabled {
@@ -697,6 +715,7 @@ func NewNetworkPolicyController(clientset kubernetes.Interface,
 	}
 
 	npc.syncPeriod = config.IPTablesSyncPeriod
+	npc.syncQueue = syncQueue
 
 	npc.v1NetworkPolicy = true
 	v, _ := clientset.Discovery().ServerVersion()

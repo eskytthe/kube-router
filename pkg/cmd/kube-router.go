@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"github.com/cloudnativelabs/kube-router/pkg/utils"
 	"os"
 	"os/signal"
 	"runtime"
@@ -127,9 +128,13 @@ func (kr *KubeRouter) Run() error {
 		kr.Config.MetricsEnabled = false
 	}
 
+	var syncQueue = utils.NewQueue()
+	wg.Add(1)
+	go syncQueue.Run(stopCh, &wg)
+	
 	if kr.Config.RunFirewall {
 		npc, err := netpol.NewNetworkPolicyController(kr.Client,
-			kr.Config, podInformer, npInformer, nsInformer)
+			kr.Config, podInformer, npInformer, nsInformer, syncQueue)
 		if err != nil {
 			return errors.New("Failed to create network policy controller: " + err.Error())
 		}
@@ -158,7 +163,7 @@ func (kr *KubeRouter) Run() error {
 
 	if kr.Config.RunServiceProxy {
 		nsc, err := proxy.NewNetworkServicesController(kr.Client, kr.Config,
-			svcInformer, epInformer, podInformer)
+			svcInformer, epInformer, podInformer, syncQueue)
 		if err != nil {
 			return errors.New("Failed to create network services controller: " + err.Error())
 		}
