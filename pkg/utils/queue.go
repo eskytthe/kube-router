@@ -8,13 +8,13 @@ import (
 
 type Queue struct {
 	sync.Mutex
-	items    []*QueueItem
+	items []*QueueItem
 }
 
 type QueueItem struct {
 	Identifier string
-	Todo func() error
-	Callback func(err error)
+	Todo       func() error
+	Callback   func(err error)
 }
 
 func (q *Queue) Push(item *QueueItem) {
@@ -45,7 +45,7 @@ func (q *Queue) Pop() *QueueItem {
 }
 
 func NewQueue() *Queue {
-	return &Queue {
+	return &Queue{
 		items: make([]*QueueItem, 0),
 	}
 }
