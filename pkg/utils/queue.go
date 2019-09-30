@@ -19,6 +19,7 @@ type QueueItem struct {
 
 func (q *Queue) Push(item *QueueItem) {
 	q.Lock()
+	glog.V(1).Info("Queue content before push: {}", q.items)
 	defer q.Unlock()
 
 	length := len(q.items)
@@ -31,16 +32,19 @@ func (q *Queue) Push(item *QueueItem) {
 	}
 
 	q.items = append(q.items, item)
+	glog.V(1).Info("Queue content after push: {}", q.items)
 }
 
 func (q *Queue) Pop() *QueueItem {
 	q.Lock()
+	glog.V(1).Info("Queue content before pop: {}", q.items)
 	defer q.Unlock()
 	if len(q.items) == 0 {
 		return nil
 	}
 	item := q.items[0]
 	q.items = q.items[1:]
+	glog.V(1).Info("Queue content after pop: {}", q.items)
 	return item
 }
 
@@ -64,6 +68,7 @@ func (q *Queue) Run(stopCh chan struct{}, wg *sync.WaitGroup) {
 		}
 		item := q.Pop()
 		if item != nil {
+			glog.V(1).Info("Processing queue item: {}", item)
 			item.Callback(item.Todo())
 		}
 	}
