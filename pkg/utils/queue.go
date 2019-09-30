@@ -68,8 +68,9 @@ func (q *Queue) Run(stopCh chan struct{}, wg *sync.WaitGroup) {
 		}
 		item := q.Pop()
 		if item != nil {
-			glog.V(1).Info("Processing queue item: {}", item)
+			now := time.Now()
 			item.Callback(item.Todo())
+			glog.V(1).Info("Processed queue item: {}, in time: {}", item, time.Since(now))
 		}
 	}
 
