@@ -24,58 +24,50 @@ const (
 		chain egress {
 			type filter hook prerouting priority -120; policy accept
 			{{template "accept" .}}
+			ct state established,related accept
+			ct state invalid {{template "drop"}}
 
+			{{$policies := .Policies}}
 			{{range .EgressPods}}
-				ip saddr {{.IP}} jump {{.Namespace}}-{{.Name}}-egress-fw
+				{{with $pod := .}}
+				{{range $policies}}
+					{{if .Matches $pod}}jump {{.Namespace}}-{{.Name}}-netpol-egress{{end}}{{end}}
+				{{end}}
 			{{end}}
-			{{if defaultDeny}}ip saddr { {{podCIDR}} } {{template "drop"}}{{end}}
+			{{template "markforreject"}}
 		}
 
 		chain ingress-forward {
 			type filter hook forward priority 0; policy accept
 			{{template "accept" .}}
 			meta mark 32760 {{template "reject"}}
+			ct state established,related accept
+			ct state invalid {{template "drop"}}
 
+			{{$policies := .Policies}}
 			{{range .IngressPods}}
-				ip daddr {{.IP}} jump {{.Namespace}}-{{.Name}}-ingress-fw
-			{{end}}
-			{{if defaultDeny}}ip daddr { {{podCIDR}} } {{template "drop"}}{{end}}
+				{{with $pod := .}}
+				{{range $policies}}
+					{{if .Matches $pod}}jump {{.Namespace}}-{{.Name}}-netpol-ingress{{end}}{{end}}
+				{{end}}{{end}}
+			{{template "reject"}}
 		}
 
 		chain ingress-output {
 			type filter hook output priority 0; policy accept
 			{{template "accept" .}}
 			meta mark 32760 {{template "reject"}}
-
-			{{range .IngressPods}}
-				ip daddr {{.IP}} jump {{.Namespace}}-{{.Name}}-ingress-fw
-			{{end}}
-			{{if defaultDeny}}ip daddr { {{podCIDR}} } {{template "drop"}}{{end}}
-		}
-
-		{{$policies := .Policies}}
-		{{range .IngressPods}}
-		chain {{.Namespace}}-{{.Name}}-ingress-fw {
 			ct state established,related accept
 			ct state invalid {{template "drop"}}
-			{{with $pod := .}}
-			{{range $policies}}
-				{{if .Matches $pod}}jump {{.Namespace}}-{{.Name}}-netpol-ingress{{end}}{{end}}
-			{{end}}
+
+			{{$policies := .Policies}}
+			{{range .IngressPods}}
+				{{with $pod := .}}
+				{{range $policies}}
+					{{if .Matches $pod}}jump {{.Namespace}}-{{.Name}}-netpol-ingress{{end}}{{end}}
+				{{end}}{{end}}
 			{{template "reject"}}
 		}
-		{{end}}
-		{{range .EgressPods}}
-		chain {{.Namespace}}-{{.Name}}-egress-fw {
-			ct state established,related accept
-			ct state invalid {{template "drop"}}
-			{{with $pod := .}}
-			{{range $policies}}
-				{{if .Matches $pod}}jump {{.Namespace}}-{{.Name}}-netpol-egress{{end}}{{end}}
-			{{end}}
-			{{template "markforreject"}}
-		}
-		{{end}}
 
 		{{range .Policies}}
 			{{template "policy" .}}
