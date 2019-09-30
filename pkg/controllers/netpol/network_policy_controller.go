@@ -59,6 +59,8 @@ type NetworkPolicyController struct {
 	NamespaceEventHandler     cache.ResourceEventHandler
 	NetworkPolicyEventHandler cache.ResourceEventHandler
 	syncQueue                 *utils.Queue
+
+	healthChan chan<- *healthcheck.ControllerHeartbeat
 }
 
 // internal structure to represent a network policy
@@ -126,6 +128,7 @@ func (npc *NetworkPolicyController) Run(healthChan chan<- *healthcheck.Controlle
 	defer wg.Done()
 
 	glog.Info("Starting network policy controller")
+	npc.healthChan = healthChan
 
 	// loop forever till notified to stop on stopCh
 	for {
@@ -139,14 +142,14 @@ func (npc *NetworkPolicyController) Run(healthChan chan<- *healthcheck.Controlle
 
 		glog.V(1).Info("Performing periodic sync to reflect network policies")
 		npc.syncQueue.Push(&utils.QueueItem{
-			Identifier: "NPC-PERIODIC",
+			Identifier: "NPC-SYNC",
 			Todo:       npc.sync,
 			Callback: func(err error) {
 				if err != nil {
 					glog.Errorf("Error during periodic sync of network policies in network policy controller. Error: " + err.Error())
 					glog.Errorf("Skipping sending heartbeat from network policy controller as periodic sync failed.")
 				} else {
-					healthcheck.SendHeartBeat(healthChan, "NPC")
+					healthcheck.SendHeartBeat(npc.healthChan, "NPC")
 				}
 				npc.readyForUpdates = true
 			},
@@ -176,6 +179,8 @@ func (npc *NetworkPolicyController) OnPodUpdate(obj interface{}) {
 		Callback: func(err error) {
 			if err != nil {
 				glog.Errorf("Error syncing network policy for the update to pod: %s/%s Error: %s", pod.Namespace, pod.Name, err)
+			} else {
+				healthcheck.SendHeartBeat(npc.healthChan, "NPC")
 			}
 		},
 	})
@@ -197,6 +202,8 @@ func (npc *NetworkPolicyController) OnNetworkPolicyUpdate(obj interface{}) {
 		Callback: func(err error) {
 			if err != nil {
 				glog.Errorf("Error syncing network policy for the update to network policy: %s/%s Error: %s", netpol.Namespace, netpol.Name, err)
+			} else {
+				healthcheck.SendHeartBeat(npc.healthChan, "NPC")
 			}
 		},
 	})
@@ -217,6 +224,8 @@ func (npc *NetworkPolicyController) OnNamespaceUpdate(obj interface{}) {
 		Callback: func(err error) {
 			if err != nil {
 				glog.Errorf("Error syncing on namespace update: %s", err)
+			} else {
+				healthcheck.SendHeartBeat(npc.healthChan, "NPC")
 			}
 		},
 	})
