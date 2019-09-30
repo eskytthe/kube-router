@@ -141,24 +141,13 @@ func (npc *NetworkPolicyController) Run(healthChan chan<- *healthcheck.Controlle
 		}
 
 		glog.V(1).Info("Performing periodic sync to reflect network policies")
-		npc.syncQueue.Push(&utils.QueueItem{
-			Identifier: "NPC-SYNC",
-			Todo:       npc.sync,
-			Callback: func(err error) {
-				if err != nil {
-					glog.Errorf("Error during periodic sync of network policies in network policy controller. Error: " + err.Error())
-					glog.Errorf("Skipping sending heartbeat from network policy controller as periodic sync failed.")
-				} else {
-					healthcheck.SendHeartBeat(npc.healthChan, "NPC")
-				}
-				npc.readyForUpdates = true
-			},
-		})
+		npc.sync()
+		healthcheck.SendHeartBeat(npc.healthChan, "NPC")
 		select {
 		case <-stopCh:
 			glog.Infof("Shutting down network policies controller")
 			return
-		case <-t.C:
+		default:
 		}
 	}
 }
@@ -660,19 +649,19 @@ func (npc *NetworkPolicyController) buildBetaNetworkPoliciesInfo() (*[]NetworkPo
 func (npc *NetworkPolicyController) newPodEventHandler() cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			npc.OnPodUpdate(obj)
+			/*npc.OnPodUpdate(obj)*/
 
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			newPoObj := newObj.(*api.Pod)
+			/*newPoObj := newObj.(*api.Pod)
 			oldPoObj := oldObj.(*api.Pod)
 			if newPoObj.Status.Phase != oldPoObj.Status.Phase || newPoObj.Status.PodIP != oldPoObj.Status.PodIP {
 				// for the network policies, we are only interested in pod status phase change or IP change
 				npc.OnPodUpdate(newObj)
-			}
+			}*/
 		},
 		DeleteFunc: func(obj interface{}) {
-			npc.OnPodUpdate(obj)
+			/*npc.OnPodUpdate(obj)*/
 		},
 	}
 }
@@ -680,15 +669,15 @@ func (npc *NetworkPolicyController) newPodEventHandler() cache.ResourceEventHand
 func (npc *NetworkPolicyController) newNamespaceEventHandler() cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			npc.OnNamespaceUpdate(obj)
+			/*npc.OnNamespaceUpdate(obj)*/
 
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			npc.OnNamespaceUpdate(newObj)
+			/*npc.OnNamespaceUpdate(newObj)*/
 
 		},
 		DeleteFunc: func(obj interface{}) {
-			npc.OnNamespaceUpdate(obj)
+			/*npc.OnNamespaceUpdate(obj)*/
 
 		},
 	}
@@ -697,14 +686,14 @@ func (npc *NetworkPolicyController) newNamespaceEventHandler() cache.ResourceEve
 func (npc *NetworkPolicyController) newNetworkPolicyEventHandler() cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			npc.OnNetworkPolicyUpdate(obj)
+			/*npc.OnNetworkPolicyUpdate(obj)*/
 
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			npc.OnNetworkPolicyUpdate(newObj)
+			/*npc.OnNetworkPolicyUpdate(newObj)*/
 		},
 		DeleteFunc: func(obj interface{}) {
-			npc.OnNetworkPolicyUpdate(obj)
+			/*npc.OnNetworkPolicyUpdate(obj)*/
 
 		},
 	}

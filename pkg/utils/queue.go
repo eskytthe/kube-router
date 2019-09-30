@@ -57,6 +57,7 @@ func NewQueue() *Queue {
 func (q *Queue) Run(stopCh chan struct{}, wg *sync.WaitGroup) {
 	defer wg.Done()
 	glog.V(1).Info("Starting queue handler...")
+	return
 	// loop forever till notified to stop on stopCh
 	for {
 		select {
