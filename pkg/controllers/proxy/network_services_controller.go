@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"reflect"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -724,13 +723,13 @@ func (nsc *NetworkServicesController) OnEndpointsUpdate(obj interface{}) {
 	}
 
 	nsc.syncQueue.Push(&utils.QueueItem{
-		Identifier: "NSC-ENDPOINT-UPDATE",
+		Identifier: "NSC-SERVICE-UPDATE",
 		Todo: func() error {
 			// build new service and endpoints map to reflect the change
 			newServiceMap := nsc.buildServicesInfo()
 			newEndpointsMap := nsc.buildEndpointsInfo()
 
-			if len(newEndpointsMap) != len(nsc.endpointsMap) || !reflect.DeepEqual(newEndpointsMap, nsc.endpointsMap) {
+			if true {
 				nsc.endpointsMap = newEndpointsMap
 				nsc.serviceMap = newServiceMap
 				glog.V(1).Infof("Syncing IPVS services sync for update to endpoint: %s/%s", ep.Namespace, ep.Name)
@@ -766,7 +765,7 @@ func (nsc *NetworkServicesController) OnServiceUpdate(obj interface{}) {
 			newServiceMap := nsc.buildServicesInfo()
 			newEndpointsMap := nsc.buildEndpointsInfo()
 
-			if len(newServiceMap) != len(nsc.serviceMap) || !reflect.DeepEqual(newServiceMap, nsc.serviceMap) {
+			if true {
 				nsc.endpointsMap = newEndpointsMap
 				nsc.serviceMap = newServiceMap
 				glog.V(1).Infof("Syncing IPVS services sync on update to service: %s/%s", svc.Namespace, svc.Name)
