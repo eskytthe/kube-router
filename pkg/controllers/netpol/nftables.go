@@ -2,11 +2,15 @@ package netpol
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"fmt"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"text/template"
 )
@@ -20,6 +24,16 @@ const (
 	create table {{.TableName}}
 
 	table {{.TableName}} {
+
+		{{range $key, $value := .Sets}}
+			set {{$key}} {
+                type ipv4_addr
+				flags constant, interval
+				{{ $length := len $value }}{{ if gt $length 2 }}
+                elements = { {{$value}} }
+				{{end}}
+        	}
+		{{end}}
 
 		chain egress {
 			type filter hook prerouting priority -120; policy accept
@@ -89,10 +103,10 @@ const (
 		{{range .IngressRules}}
 			{{with $r := .}}
 			{{if .MatchAllPorts}}
-				ip daddr { {{ range $p.TargetPods }}{{ .IP }},{{end}} }{{if not $r.MatchAllSource}}{{genIPSetFromIngressRule $r}}{{end}} accept
+				ip daddr {{genIPSetFromPods $p.TargetPods}}{{if not $r.MatchAllSource}}{{genIPSetFromIngressRule $r}}{{end}} accept
 			{{else}}
 				{{range .Ports}}
-					ip daddr { {{ range $p.TargetPods }}{{ .IP }},{{end}} }{{if not $r.MatchAllSource}}{{genIPSetFromIngressRule $r}}{{end}} {{template "port" .}} accept
+					ip daddr {{genIPSetFromPods $p.TargetPods}}{{if not $r.MatchAllSource}}{{genIPSetFromIngressRule $r}}{{end}} {{template "port" .}} accept
 				{{end}}
 			{{end}}
 			{{end}}
@@ -102,10 +116,10 @@ const (
 		{{range .EgressRules}}
 			{{with $r := .}}
 			{{if .MatchAllPorts}}
-				ip saddr { {{ range $p.TargetPods }}{{ .IP }},{{end}} }{{if not $r.MatchAllDestinations}}{{genIPSetFromEgressRule $r}}{{end}} accept
+				ip saddr {{genIPSetFromPods $p.TargetPods}}{{if not $r.MatchAllDestinations}}{{genIPSetFromEgressRule $r}}{{end}} accept
 			{{else}}
 				{{range .Ports}}
-					ip saddr { {{ range $p.TargetPods }}{{ .IP }},{{end}} }{{if not $r.MatchAllDestinations}}{{genIPSetFromEgressRule $r}}{{end}} {{template "port" .}} accept
+					ip saddr {{genIPSetFromPods $p.TargetPods}}{{if not $r.MatchAllDestinations}}{{genIPSetFromEgressRule $r}}{{end}} {{template "port" .}} accept
 				{{end}}
 			{{end}}
 			{{end}}
@@ -127,6 +141,8 @@ const (
 `
 )
 
+var sets map[string]string
+
 type NFTablesInfo struct {
 	IngressPods map[string]PodInfo
 	EgressPods  map[string]PodInfo
@@ -134,6 +150,7 @@ type NFTablesInfo struct {
 	LocalIp4    []string
 	LocalIp6    []string
 	TableName   string
+	Sets		map[string]string
 }
 
 type NFTables struct {
@@ -146,6 +163,7 @@ func NewNFTablesHandler(podCIDR string, defaultDeny bool) (*NFTables, error) {
 		"toLower":                 strings.ToLower,
 		"genIPSetFromIngressRule": genIPSetFromIngressRule,
 		"genIPSetFromEgressRule":  genIPSetFromEgressRule,
+		"genIPSetFromPods": genIPSetFromPods,
 		"defaultDeny": func() bool {
 			return defaultDeny
 		},
@@ -183,9 +201,25 @@ func (nft *NFTables) Sync(networkPoliciesInfo *[]NetworkPolicyInfo, ingressPods,
 		return err
 	}
 
-	file, _ := os.Create(NFTABLES_FILE)
-	defer file.Close()
+	file, _ := ioutil.TempFile("/tmp", "kube-router-")
+	defer func() {
+		file.Close()
+		os.Remove(file.Name())
+	}()
 	writer := bufio.NewWriter(file)
+	sets = make(map[string]string)
+
+	//yuk pre-gen sets
+	for _, pol := range *networkPoliciesInfo {
+		genIPSetFromPods(pol.TargetPods)
+		for _, e := range pol.EgressRules {
+			genIPSetFromEgressRule(e)
+		}
+		for _, i := range pol.IngressRules {
+			genIPSetFromIngressRule(i)
+		}
+	}
+
 	err = nft.Generate(writer, &NFTablesInfo{
 		IngressPods: *ingressPods,
 		EgressPods:  *egressPods,
@@ -193,11 +227,27 @@ func (nft *NFTables) Sync(networkPoliciesInfo *[]NetworkPolicyInfo, ingressPods,
 		LocalIp4:    *ip4,
 		LocalIp6:    *ip6,
 		TableName:   NFTABLES_TABLE_NAME,
+		Sets: sets,
 	})
 	if err != nil {
 		return err
 	}
-	writer.Flush()
+	err = writer.Flush()
+	if err != nil {
+		return err
+	}
+	err = file.Sync()
+	if err != nil {
+		return err
+	}
+	err = file.Close()
+	if err != nil {
+		return err
+	}
+	err = os.Rename(file.Name(), NFTABLES_FILE)
+	if err != nil {
+		return err
+	}
 
 	return nft.execNftablesCmd("-f", NFTABLES_FILE)
 }
@@ -254,6 +304,22 @@ func getLocalAddrs() (*[]string, *[]string, error) {
 	return &ip4, &ip6, nil
 }
 
+func genIPSetFromPods(pods map[string]PodInfo) string {
+	var ips []string
+
+	for _, p := range pods {
+		if len(p.IP) > 1 {
+			ips = append(ips, p.IP)
+		}
+	}
+
+	if len(ips) > 0 {
+		return "@" + getOrCreateSet(ips)
+	} else {
+		return "{}"
+	}
+}
+
 func genIPSetFromIngressRule(rule IngressRule) string {
 	var (
 		positive []string
@@ -268,7 +334,7 @@ func genIPSetFromIngressRule(rule IngressRule) string {
 		negative = append(negative, b.Except...)
 	}
 
-	return genIpSet(positive, negative, "saddr")
+	return genIpSet(getOrCreateSet(positive), getOrCreateSet(negative), "saddr")
 }
 
 func genIPSetFromEgressRule(rule EgressRule) string {
@@ -285,25 +351,42 @@ func genIPSetFromEgressRule(rule EgressRule) string {
 		negative = append(negative, b.Except...)
 	}
 
-	return genIpSet(positive, negative, "daddr")
+
+	return genIpSet(getOrCreateSet(positive), getOrCreateSet(negative), "daddr")
 }
 
-func genIpSet(positive []string, negative []string, matches string) string {
+func getOrCreateSet(unfiltered []string) string {
+	ips := make([]string, 0)
+	for _, ip := range unfiltered {
+		if len(ip) > 1 {
+			ips = append(ips, ip)
+		}
+	}
+	sort.Strings(ips)
+	ipStr := strings.Join(ips, ",")
+	digest := sha256.Sum256([]byte(ipStr))
+	setName := fmt.Sprintf("set_%x", digest)
+	if _, ok := sets[setName]; !ok {
+		sets[setName] = ipStr
+	}
+	return setName
+}
+
+func genIpSet(positive string, negative string, matches string) string {
 	var builder strings.Builder
 
 	if len(positive) > 0 {
 		builder.WriteString(" ip ")
 		builder.WriteString(matches)
-		builder.WriteString(" { ")
-		builder.WriteString(strings.Join(positive, ","))
-		builder.WriteString(" }")
+		builder.WriteString(" @")
+		builder.WriteString(positive)
 	}
 	if len(negative) > 0 {
 		builder.WriteString(" ip ")
 		builder.WriteString(matches)
-		builder.WriteString(" != { ")
-		builder.WriteString(strings.Join(negative, ","))
-		builder.WriteString(" }")
+		builder.WriteString(" != ")
+		builder.WriteString("@")
+		builder.WriteString(negative)
 	}
 
 	return builder.String()
