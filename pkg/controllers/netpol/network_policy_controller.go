@@ -44,6 +44,10 @@ type NetworkPolicyController struct {
 	nodeHostName    string
 	mu              sync.Mutex
 	syncPeriod      time.Duration
+	rollupPeriod    time.Duration
+	rollupQueue     chan struct{}
+	rollupCount     uint
+	rollupCountLock sync.Mutex
 	MetricsEnabled  bool
 	v1NetworkPolicy bool
 	readyForUpdates bool
@@ -126,6 +130,7 @@ func (npc *NetworkPolicyController) Run(healthChan chan<- *healthcheck.Controlle
 	defer wg.Done()
 
 	glog.Info("Starting network policy controller")
+	go npc.Rollup()
 
 	// loop forever till notified to stop on stopCh
 	for {
@@ -165,10 +170,7 @@ func (npc *NetworkPolicyController) OnPodUpdate(obj interface{}) {
 		return
 	}
 
-	err := npc.Sync()
-	if err != nil {
-		glog.Errorf("Error syncing network policy for the update to pod: %s/%s Error: %s", pod.Namespace, pod.Name, err)
-	}
+	npc.QueueSync()
 }
 
 // OnNetworkPolicyUpdate handles updates to network policy from the kubernetes api server
@@ -181,10 +183,7 @@ func (npc *NetworkPolicyController) OnNetworkPolicyUpdate(obj interface{}) {
 		return
 	}
 
-	err := npc.Sync()
-	if err != nil {
-		glog.Errorf("Error syncing network policy for the update to network policy: %s/%s Error: %s", netpol.Namespace, netpol.Name, err)
-	}
+	npc.QueueSync()
 }
 
 // OnNamespaceUpdate handles updates to namespace from kubernetes api server
@@ -196,9 +195,35 @@ func (npc *NetworkPolicyController) OnNamespaceUpdate(obj interface{}) {
 	}
 	glog.V(2).Infof("Received update for namespace: %s", namespace.Name)
 
-	err := npc.Sync()
-	if err != nil {
-		glog.Errorf("Error syncing on namespace update: %s", err)
+	npc.QueueSync()
+}
+
+func (npc *NetworkPolicyController) QueueSync() {
+	select {
+	case npc.rollupQueue <- struct {}{}:
+	default:
+		npc.rollupCountLock.Lock()
+		npc.rollupCount++
+		npc.rollupCountLock.Unlock()
+	}
+}
+
+func (npc *NetworkPolicyController) Rollup() {
+	for {
+		select {
+		case <- npc.rollupQueue:
+		  npc.rollupCountLock.Lock()
+      if npc.rollupCount > 0 {
+        glog.Infof("Discarded %v queued netpol sync requests", npc.rollupCount)
+        npc.rollupCount = 0
+      }
+		  npc.rollupCountLock.Unlock()
+			err := npc.Sync()
+			if err != nil {
+				glog.Errorf("Error during sync of network policies. Error: " + err.Error())
+			}
+			time.Sleep(npc.rollupPeriod)
+		}
 	}
 }
 
@@ -695,6 +720,8 @@ func NewNetworkPolicyController(clientset kubernetes.Interface,
 	}
 
 	npc.syncPeriod = config.IPTablesSyncPeriod
+	npc.rollupPeriod = config.NetpolRollupPeriod
+	npc.rollupQueue = make(chan struct{}, 1) // One waitee at most
 
 	npc.v1NetworkPolicy = true
 	v, _ := clientset.Discovery().ServerVersion()

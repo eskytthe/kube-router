@@ -35,6 +35,7 @@ type KubeRouterConfig struct {
 	NetworkPolicyHandler    string
 	NetworkPolicyDefault    string
 	IPTablesSyncPeriod      time.Duration
+	NetpolRollupPeriod      time.Duration
 	IpvsSyncPeriod          time.Duration
 	Kubeconfig              string
 	MasqueradeAll           bool
@@ -64,6 +65,7 @@ func NewKubeRouterConfig() *KubeRouterConfig {
 		CacheSyncTimeout:   1 * time.Minute,
 		IpvsSyncPeriod:     5 * time.Minute,
 		IPTablesSyncPeriod: 5 * time.Minute,
+		NetpolRollupPeriod: 1 * time.Second,
 		RoutesSyncPeriod:   5 * time.Minute,
 		EnableOverlay:      true,
 	}
@@ -104,6 +106,8 @@ func (s *KubeRouterConfig) AddFlags(fs *pflag.FlagSet) {
 		"The delay between ipvs config synchronizations (e.g. '5s', '1m', '2h22m'). Must be greater than 0.")
 	fs.DurationVar(&s.RoutesSyncPeriod, "routes-sync-period", s.RoutesSyncPeriod,
 		"The delay between route updates and advertisements (e.g. '5s', '1m', '2h22m'). Must be greater than 0.")
+	fs.DurationVar(&s.NetpolRollupPeriod, "netpol-rollup-period", s.NetpolRollupPeriod,
+		"The delay between netpol updates (e.g. '5s', '1m', '2h22m'). Must be greater than 0.")
 	fs.BoolVar(&s.AdvertiseClusterIp, "advertise-cluster-ip", false,
 		"Add Cluster IP of the service to the RIB so that it gets advertises to the BGP peers.")
 	fs.BoolVar(&s.AdvertiseExternalIp, "advertise-external-ip", false,
