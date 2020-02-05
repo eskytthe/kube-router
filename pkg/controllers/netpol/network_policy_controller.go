@@ -200,7 +200,7 @@ func (npc *NetworkPolicyController) OnNamespaceUpdate(obj interface{}) {
 
 func (npc *NetworkPolicyController) QueueSync() {
 	select {
-	case npc.rollupQueue <- struct {}{}:
+	case npc.rollupQueue <- struct{}{}:
 	default:
 		npc.rollupCountLock.Lock()
 		npc.rollupCount++
@@ -211,13 +211,13 @@ func (npc *NetworkPolicyController) QueueSync() {
 func (npc *NetworkPolicyController) Rollup() {
 	for {
 		select {
-		case <- npc.rollupQueue:
-		  npc.rollupCountLock.Lock()
-      if npc.rollupCount > 0 {
-        glog.Infof("Discarded %v queued netpol sync requests", npc.rollupCount)
-        npc.rollupCount = 0
-      }
-		  npc.rollupCountLock.Unlock()
+		case <-npc.rollupQueue:
+			npc.rollupCountLock.Lock()
+			if npc.rollupCount > 0 {
+				glog.Infof("Discarded %v queued netpol sync requests", npc.rollupCount)
+				npc.rollupCount = 0
+			}
+			npc.rollupCountLock.Unlock()
 			err := npc.Sync()
 			if err != nil {
 				glog.Errorf("Error during sync of network policies. Error: " + err.Error())
