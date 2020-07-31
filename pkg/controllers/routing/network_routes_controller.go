@@ -752,7 +752,7 @@ func (nrc *NetworkRoutingController) startBgpServer() error {
 
 	// If the global routing peer is configured then peer with it
 	// else attempt to get peers from node specific BGP annotations.
-	if len(nrc.globalPeerRouters) == 0 {
+	if !nrc.bgpFullMeshMode && len(nrc.globalPeerRouters) == 0 {
 		// Get Global Peer Router ASN configs
 		nodeBgpPeerAsnsAnnotation, ok := node.ObjectMeta.Annotations[peerASNAnnotation]
 		if !ok {
