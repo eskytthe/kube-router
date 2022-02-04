@@ -36,6 +36,13 @@ const (
         	}
 		{{end}}
 
+		set pod_cidr {
+			type ipv4_addr
+			flags constant, interval
+
+			elements = { {{podCIDR}} }
+		}
+
 		chain egress {
 			type filter hook prerouting priority -120; policy accept
 			{{template "accept" .}}
@@ -43,29 +50,31 @@ const (
 			{{range .EgressPods}}
 				ip saddr {{.IP}} jump {{.Namespace}}-{{.Name}}-egress-fw
 			{{end}}
-			{{if defaultDeny}}ip saddr { {{podCIDR}} } {{template "drop"}}{{end}}
+			{{if defaultDeny}}ip saddr @pod_cidr {{template "drop"}}{{end}}
 		}
 
 		chain ingress-forward {
 			type filter hook forward priority 0; policy accept
 			{{template "accept" .}}
+			ip daddr @pod_cidr ip daddr != {{genIPSetFromPods .AllPods}} nftrace set 1 reject with icmp type host-unreachable
 			meta mark 32760 {{template "reject"}}
 
 			{{range .IngressPods}}
 				ip daddr {{.IP}} jump {{.Namespace}}-{{.Name}}-ingress-fw
 			{{end}}
-			{{if defaultDeny}}ip daddr { {{podCIDR}} } {{template "drop"}}{{end}}
+			{{if defaultDeny}}ip daddr @pod_cidr {{template "reject"}}{{end}}
 		}
 
 		chain ingress-output {
 			type filter hook output priority 0; policy accept
 			{{template "accept" .}}
+			ip daddr @pod_cidr ip daddr != {{genIPSetFromPods .AllPods}} nftrace set 1 reject with icmp type host-unreachable
 			meta mark 32760 {{template "reject"}}
 
 			{{range .IngressPods}}
 				ip daddr {{.IP}} jump {{.Namespace}}-{{.Name}}-ingress-fw
 			{{end}}
-			{{if defaultDeny}}ip daddr { {{podCIDR}} } {{template "drop"}}{{end}}
+			{{if defaultDeny}}ip daddr @pod_cidr {{template "reject"}}{{end}}
 		}
 
 		{{$policies := .Policies}}
@@ -145,6 +154,7 @@ const (
 var sets map[string]string
 
 type NFTablesInfo struct {
+	AllPods     map[string]PodInfo
 	IngressPods map[string]PodInfo
 	EgressPods  map[string]PodInfo
 	Policies    []NetworkPolicyInfo
@@ -190,7 +200,7 @@ func (nft *NFTables) Init() {
 	nft.execNftablesCmd("create", "table", NFTABLES_TABLE_NAME)
 }
 
-func (nft *NFTables) Sync(networkPoliciesInfo *[]NetworkPolicyInfo, ingressPods, egressPods *map[string]PodInfo) error {
+func (nft *NFTables) Sync(networkPoliciesInfo *[]NetworkPolicyInfo, allPods, ingressPods, egressPods *map[string]PodInfo) error {
 	if nft.dead {
 		return errors.New("Cannot sync nftables with a killed NFTable handler")
 	}
@@ -210,7 +220,9 @@ func (nft *NFTables) Sync(networkPoliciesInfo *[]NetworkPolicyInfo, ingressPods,
 	writer := bufio.NewWriter(file)
 	sets = make(map[string]string)
 
+
 	//yuk pre-gen sets
+	genIPSetFromPods(*allPods)
 	for _, pol := range *networkPoliciesInfo {
 		genIPSetFromPods(pol.TargetPods)
 		for _, e := range pol.EgressRules {
@@ -222,6 +234,7 @@ func (nft *NFTables) Sync(networkPoliciesInfo *[]NetworkPolicyInfo, ingressPods,
 	}
 
 	err = nft.Generate(writer, &NFTablesInfo{
+		AllPods:     *allPods,
 		IngressPods: *ingressPods,
 		EgressPods:  *egressPods,
 		Policies:    *networkPoliciesInfo,
