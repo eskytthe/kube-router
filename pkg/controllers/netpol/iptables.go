@@ -46,7 +46,9 @@ func (nft *IPTables) Init() {
 	// no-op
 }
 
-func (ipt *IPTables) Sync(networkPoliciesInfo *[]NetworkPolicyInfo, ingressPods, egressPods *map[string]PodInfo) error {
+func (ipt *IPTables) Sync(networkPoliciesInfo *[]NetworkPolicyInfo, allPods, ingressPods, egressPods *map[string]PodInfo) error {
+
+	//note that "allPods" is not used in the iptables impl as for now
 
 	start := time.Now()
 	syncVersion := strconv.FormatInt(start.UnixNano(), 10)

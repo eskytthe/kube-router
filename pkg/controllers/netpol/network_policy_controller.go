@@ -118,7 +118,7 @@ type ProtocolAndPort struct {
 
 type PolicyHandler interface {
 	Init()
-	Sync(networkPoliciesInfo *[]NetworkPolicyInfo, ingressPods, egressPods *map[string]PodInfo) error
+	Sync(networkPoliciesInfo *[]NetworkPolicyInfo, allPods, ingressPods, egressPods *map[string]PodInfo) error
 	Cleanup()
 	Shutdown()
 }
@@ -257,17 +257,12 @@ func (npc *NetworkPolicyController) Sync() error {
 		}
 	}
 
-	ingressPods, err := npc.getIngressNetworkPolicyEnabledPods(npc.nodeIP.String())
-	if err != nil {
-		return errors.New("Aborting sync. Failed to get ingress pods: " + err.Error())
-	}
-	egressPods, err := npc.getEgressNetworkPolicyEnabledPods(npc.nodeIP.String())
-	if err != nil {
-		return errors.New("Aborting sync. Failed to build egress pods: " + err.Error())
-	}
+	allNodePods := npc.getNodePods(npc.nodeIP.String())
+	ingressPods := npc.getIngressNetworkPolicyEnabledPods(allNodePods)
+	egressPods := npc.getEgressNetworkPolicyEnabledPods(allNodePods)
 
 	// delegate actual sync to the handler
-	return npc.handler.Sync(npc.networkPoliciesInfo, ingressPods, egressPods)
+	return npc.handler.Sync(npc.networkPoliciesInfo, allNodePods, ingressPods, egressPods)
 }
 
 func (npc *NetworkPolicyController) Cleanup() {
@@ -280,66 +275,49 @@ func (policy NetworkPolicyInfo) Matches(pod PodInfo) bool {
 	return ok
 }
 
-func (npc *NetworkPolicyController) getIngressNetworkPolicyEnabledPods(nodeIp string) (*map[string]PodInfo, error) {
+func (npc *NetworkPolicyController) getNodePods(nodeIp string) *map[string]PodInfo {
 	nodePods := make(map[string]PodInfo)
-
 	for _, obj := range npc.podLister.List() {
 		pod := obj.(*api.Pod)
+		if strings.Compare(pod.Status.HostIP, nodeIp) == 0 {
+			podInfo := PodInfo{IP: pod.Status.PodIP,
+				Name:      pod.ObjectMeta.Name,
+				Namespace: pod.ObjectMeta.Namespace,
+				Labels:    pod.ObjectMeta.Labels}
 
-		if strings.Compare(pod.Status.HostIP, nodeIp) != 0 {
-			continue
-		}
-		podInfo := PodInfo{IP: pod.Status.PodIP,
-			Name:      pod.ObjectMeta.Name,
-			Namespace: pod.ObjectMeta.Namespace,
-			Labels:    pod.ObjectMeta.Labels}
-
-		for _, policy := range *npc.networkPoliciesInfo {
-			if policy.Namespace != pod.ObjectMeta.Namespace {
-				continue
-			}
-			_, ok := policy.TargetPods[pod.Status.PodIP]
-			if ok && (policy.policyType == "both" || policy.policyType == "ingress") {
-				glog.V(2).Infof("Found pod name: " + pod.ObjectMeta.Name + " namespace: " + pod.ObjectMeta.Namespace + " for which network policies need to be applied.")
-				podInfo.Policies = append(podInfo.Policies, policy)
-				nodePods[pod.Status.PodIP] = podInfo
-				break
-			}
+			nodePods[pod.Status.PodIP] = podInfo
 		}
 	}
-	return &nodePods, nil
-
+	return &nodePods
 }
 
-func (npc *NetworkPolicyController) getEgressNetworkPolicyEnabledPods(nodeIp string) (*map[string]PodInfo, error) {
+func (npc *NetworkPolicyController) getIngressNetworkPolicyEnabledPods(allPods *map[string]PodInfo) *map[string]PodInfo {
+	return npc.getNetworkPolicyEnabledPods(allPods, "ingress")
+}
 
-	nodePods := make(map[string]PodInfo)
+func (npc *NetworkPolicyController) getEgressNetworkPolicyEnabledPods(allPods *map[string]PodInfo) *map[string]PodInfo {
+	return npc.getNetworkPolicyEnabledPods(allPods, "egress")
+}
 
-	for _, obj := range npc.podLister.List() {
-		pod := obj.(*api.Pod)
+func (npc *NetworkPolicyController) getNetworkPolicyEnabledPods(allPods *map[string]PodInfo, direction string) *map[string]PodInfo {
+	pods := make(map[string]PodInfo)
 
-		if strings.Compare(pod.Status.HostIP, nodeIp) != 0 {
-			continue
-		}
-		podInfo := PodInfo{IP: pod.Status.PodIP,
-			Name:      pod.ObjectMeta.Name,
-			Namespace: pod.ObjectMeta.Namespace,
-			Labels:    pod.ObjectMeta.Labels}
+	for _, podInfo := range *allPods {
 
 		for _, policy := range *npc.networkPoliciesInfo {
-			if policy.Namespace != pod.ObjectMeta.Namespace {
+			if policy.Namespace != podInfo.Namespace {
 				continue
 			}
-			_, ok := policy.TargetPods[pod.Status.PodIP]
-			if ok && (policy.policyType == "both" || policy.policyType == "egress") {
-				glog.V(2).Infof("Found pod name: " + pod.ObjectMeta.Name + " namespace: " + pod.ObjectMeta.Namespace + " for which network policies need to be applied.")
+			_, ok := policy.TargetPods[podInfo.IP]
+			if ok && (policy.policyType == "both" || policy.policyType == direction) {
+				glog.V(2).Infof("Found pod name: " + podInfo.Name + " namespace: " + podInfo.Namespace + " for which network policies need to be applied.")
 				podInfo.Policies = append(podInfo.Policies, policy)
-				nodePods[pod.Status.PodIP] = podInfo
+				pods[podInfo.IP] = podInfo
 				break
 			}
 		}
 	}
-	return &nodePods, nil
+	return &pods
 }
 
 func (npc *NetworkPolicyController) checkForNamedPorts(ports *[]networking.NetworkPolicyPort) error {
