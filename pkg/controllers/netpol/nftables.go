@@ -3,6 +3,7 @@ package netpol
 import (
 	"bufio"
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -13,7 +14,6 @@ import (
 	"sort"
 	"strings"
 	"text/template"
-	"encoding/binary"
 )
 
 const (
@@ -161,7 +161,7 @@ type NFTablesInfo struct {
 	LocalIp4    []string
 	LocalIp6    []string
 	TableName   string
-	Sets		map[string]string
+	Sets        map[string]string
 }
 
 type NFTables struct {
@@ -174,7 +174,7 @@ func NewNFTablesHandler(podCIDR string, defaultDeny bool) (*NFTables, error) {
 		"toLower":                 strings.ToLower,
 		"genIPSetFromIngressRule": genIPSetFromIngressRule,
 		"genIPSetFromEgressRule":  genIPSetFromEgressRule,
-		"genIPSetFromPods": genIPSetFromPods,
+		"genIPSetFromPods":        genIPSetFromPods,
 		"defaultDeny": func() bool {
 			return defaultDeny
 		},
@@ -220,7 +220,6 @@ func (nft *NFTables) Sync(networkPoliciesInfo *[]NetworkPolicyInfo, allPods, ing
 	writer := bufio.NewWriter(file)
 	sets = make(map[string]string)
 
-
 	//yuk pre-gen sets
 	genIPSetFromPods(*allPods)
 	for _, pol := range *networkPoliciesInfo {
@@ -241,7 +240,7 @@ func (nft *NFTables) Sync(networkPoliciesInfo *[]NetworkPolicyInfo, allPods, ing
 		LocalIp4:    *ip4,
 		LocalIp6:    *ip6,
 		TableName:   NFTABLES_TABLE_NAME,
-		Sets: sets,
+		Sets:        sets,
 	})
 	if err != nil {
 		return err
@@ -364,7 +363,6 @@ func genIPSetFromEgressRule(rule EgressRule) string {
 		positive = append(positive, b.CIDR)
 		negative = append(negative, b.Except...)
 	}
-
 
 	return genIpSet(getOrCreateSet(positive), getOrCreateSet(negative), "daddr")
 }
