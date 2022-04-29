@@ -36,6 +36,7 @@ type KubeRouterConfig struct {
 	NetworkPolicyDefault    string
 	IPTablesSyncPeriod      time.Duration
 	NetpolRollupPeriod      time.Duration
+  InjectedRoutesSyncPeriod       time.Duration
 	IpvsSyncPeriod          time.Duration
 	Kubeconfig              string
 	MasqueradeAll           bool
@@ -67,6 +68,7 @@ func NewKubeRouterConfig() *KubeRouterConfig {
 		IPTablesSyncPeriod: 5 * time.Minute,
 		NetpolRollupPeriod: 1 * time.Second,
 		RoutesSyncPeriod:   5 * time.Minute,
+		InjectedRoutesSyncPeriod:       60 * time.Second,
 		EnableOverlay:      true,
 	}
 }
@@ -100,6 +102,8 @@ func (s *KubeRouterConfig) AddFlags(fs *pflag.FlagSet) {
 		"Determines which implementation should be used as network policy handler, either of: \"iptables\", \"nftables\".")
 	fs.StringVar(&s.NetworkPolicyDefault, "network-policy-default-action", "allow",
 		"Decides the default action to apply when no network policies apply to a pod, either of: \"allow\", \"deny\".")
+	fs.DurationVar(&s.InjectedRoutesSyncPeriod, "injected-routes-sync-period", s.InjectedRoutesSyncPeriod,
+	"The delay between route table synchronizations  (e.g. '5s', '1m', '2h22m'). Must be greater than 0.")
 	fs.DurationVar(&s.IPTablesSyncPeriod, "iptables-sync-period", s.IPTablesSyncPeriod,
 		"The delay between iptables rule synchronizations (e.g. '5s', '1m'). Must be greater than 0.")
 	fs.DurationVar(&s.IpvsSyncPeriod, "ipvs-sync-period", s.IpvsSyncPeriod,

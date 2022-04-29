@@ -107,6 +107,7 @@ type NetworkRoutingController struct {
 	pathPrepend             bool
 	localAddressList        []string
 	overrideNextHop         bool
+	routeSyncer            *routeSyncer
 
 	nodeLister cache.Indexer
 	svcLister  cache.Indexer
@@ -220,6 +221,8 @@ func (nrc *NetworkRoutingController) Run(healthChan chan<- *healthcheck.Controll
 	defer wg.Done()
 
 	glog.Infof("Starting network route controller")
+	// Start route syncer
+  nrc.routeSyncer.run(stopCh, wg)
 
 	// Wait till we are ready to launch BGP server
 	for {
@@ -506,10 +509,16 @@ func (nrc *NetworkRoutingController) injectRoute(path *table.Path) error {
 
 	if path.IsWithdraw {
 		glog.V(2).Infof("Removing route: '%s via %s' from peer in the routing table", dst, nexthop)
+		// Also delete route from state map so that it doesn't get re-synced after deletion
+    nrc.routeSyncer.delInjectedRoute(dst)
 		return netlink.RouteDel(route)
 	}
 	glog.V(2).Infof("Inject route: '%s via %s' from peer to routing table", dst, nexthop)
-	return netlink.RouteReplace(route)
+	// return netlink.RouteReplace(route)
+	nrc.routeSyncer.addInjectedRoute(dst, route)
+  // Immediately sync the local route table regardless of timer
+  nrc.routeSyncer.syncLocalRouteTable()
+  return nil
 }
 
 // Cleanup performs the cleanup of configurations done
@@ -866,6 +875,7 @@ func NewNetworkRoutingController(clientset kubernetes.Interface,
 	nrc.bgpServerStarted = false
 	nrc.disableSrcDstCheck = kubeRouterConfig.DisableSrcDstCheck
 	nrc.initSrcDstCheckDone = false
+	nrc.routeSyncer = newRouteSyncer(kubeRouterConfig.InjectedRoutesSyncPeriod)
 
 	nrc.hostnameOverride = kubeRouterConfig.HostnameOverride
 	node, err := utils.GetNodeObject(clientset, nrc.hostnameOverride)
