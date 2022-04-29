@@ -1,6 +1,6 @@
-{ lib, buildGoPackage }:
+{ pkgs ? import <nixpkgs> {} }:
 
-buildGoPackage rec {
+pkgs.buildGoPackage rec {
   pname = "kube-router";
   version = "0.2.5";
 
@@ -13,7 +13,7 @@ buildGoPackage rec {
     "-X ${goPackagePath}/pkg/cmd.buildDate=Nix"
   ];
 
-  meta = with lib; {
+  meta = with pkgs.lib; {
     homepage = "https://www.kube-router.io/";
     description = "All-in-one router, firewall and service proxy for Kubernetes";
     license = licenses.asl20;

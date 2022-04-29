@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/vishvananda/netlink"
-	"k8s.io/klog/v2"
+	"github.com/golang/glog"
 )
 
 type routeSyncer struct {
@@ -20,7 +20,7 @@ type routeSyncer struct {
 func (rs *routeSyncer) addInjectedRoute(dst *net.IPNet, route *netlink.Route) {
 	rs.mutex.Lock()
 	defer rs.mutex.Unlock()
-	klog.V(3).Infof("Adding route for destination: %s", dst)
+	glog.Infof("Adding route for destination: %s", dst)
 	rs.routeTableStateMap[dst.String()] = route
 }
 
@@ -29,7 +29,7 @@ func (rs *routeSyncer) delInjectedRoute(dst *net.IPNet) {
 	rs.mutex.Lock()
 	defer rs.mutex.Unlock()
 	if _, ok := rs.routeTableStateMap[dst.String()]; ok {
-		klog.V(3).Infof("Removing route for destination: %s", dst)
+		glog.Infof("Removing route for destination: %s", dst)
 		delete(rs.routeTableStateMap, dst.String())
 	}
 }
@@ -38,12 +38,12 @@ func (rs *routeSyncer) delInjectedRoute(dst *net.IPNet) {
 func (rs *routeSyncer) syncLocalRouteTable() {
 	rs.mutex.Lock()
 	defer rs.mutex.Unlock()
-	klog.V(2).Infof("Running local route table synchronization")
+	glog.Infof("Running local route table synchronization")
 	for dst, route := range rs.routeTableStateMap {
-		klog.V(3).Infof("Syncing route: %s", dst)
+		glog.Infof("Syncing route: %s", dst)
 		err := rs.routeReplacer(route)
 		if err != nil {
-			klog.Errorf("Route could not be replaced due to : " + err.Error())
+			glog.Errorf("Route could not be replaced due to : " + err.Error())
 		}
 	}
 }
@@ -61,7 +61,7 @@ func (rs *routeSyncer) run(stopCh <-chan struct{}, wg *sync.WaitGroup) {
 			case <-t.C:
 				rs.syncLocalRouteTable()
 			case <-stopCh:
-				klog.Infof("Shutting down local route synchronization")
+				glog.Infof("Shutting down local route synchronization")
 				return
 			}
 		}

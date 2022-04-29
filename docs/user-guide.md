@@ -56,6 +56,7 @@ Usage of kube-router:
       --health-port uint16                     Health check port, 0 = Disabled (default 20244)
   -h, --help                                   Print usage information.
       --hostname-override string               Overrides the NodeName of the node. Set this if kube-router is unable to determine your NodeName automatically.
+      --injected-routes-sync-period duration   The delay between route table synchronizations  (e.g. '5s', '1m', '2h22m'). Must be greater than 0. (default 1m0s)
       --iptables-sync-period duration          The delay between iptables rule synchronizations (e.g. '5s', '1m'). Must be greater than 0. (default 5m0s)
       --ipvs-sync-period duration              The delay between ipvs config synchronizations (e.g. '5s', '1m', '2h22m'). Must be greater than 0. (default 5m0s)
       --kubeconfig string                      Path to kubeconfig file with authorization information (the master location is set by the master flag).
@@ -211,7 +212,7 @@ Please read below blog on how to user DSR in combination with `--advertise-exter
 https://cloudnativelabs.github.io/post/2017-11-01-kube-high-available-ingress/
 
 You can enable DSR(Direct Server Return) functionality per service. When enabled service endpoint
-will directly respond to the client by passing the service proxy. When DSR is enabled Kube-router 
+will directly respond to the client by passing the service proxy. When DSR is enabled Kube-router
 will uses LVS's tunneling mode to achieve this.
 
 To enable DSR you need to annotate service with `kube-router.io/service.dsr=tunnel` annotation. For e.g.
@@ -227,14 +228,14 @@ kubectl annotate service my-service "kube-router.io/service.dsr=tunnel"
 You will need to enable `hostIPC: true` and `hostPID: true` in kube-router daemonset manifest.
 Also host path `/var/run/docker.sock` must be made a volumemount to kube-router.
 
-Above changes are required for kube-router to enter pod namespeace and create ipip tunnel in the pod and to 
-assign the external IP to the VIP. 
+Above changes are required for kube-router to enter pod namespeace and create ipip tunnel in the pod and to
+assign the external IP to the VIP.
 
 For an e.g manifest please look at [manifest](../daemonset/kubeadm-kuberouter-all-features-dsr.yaml) with DSR requirements enabled.
 
 ## Load balancing Scheduling Algorithms
 
-Kube-router uses LVS for service proxy. LVS support rich set of [scheduling alogirthms](http://kb.linuxvirtualserver.org/wiki/IPVS#Job_Scheduling_Algorithms). You can annotate 
+Kube-router uses LVS for service proxy. LVS support rich set of [scheduling alogirthms](http://kb.linuxvirtualserver.org/wiki/IPVS#Job_Scheduling_Algorithms). You can annotate
 the service to choose one of the scheduling alogirthms. When a service is not annotated `round-robin` scheduler is selected by default
 
 ```

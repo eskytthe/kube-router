@@ -11,65 +11,65 @@ import (
 const DEFAULT_BGP_PORT = 179
 
 type KubeRouterConfig struct {
-	AdvertiseClusterIp      bool
-	AdvertiseExternalIp     bool
-	AdvertiseNodePodCidr    bool
-	AdvertiseLoadBalancerIp bool
-	BGPGracefulRestart      bool
-	BGPPort                 uint16
-	CacheSyncTimeout        time.Duration
-	CleanupConfig           bool
-	ClusterAsn              uint
-	ClusterCIDR             string
-	DisableSrcDstCheck      bool
-	EnableCNI               bool
-	EnableiBGP              bool
-	EnableOverlay           bool
-	EnablePodEgress         bool
-	EnablePprof             bool
-	FullMeshMode            bool
-	GlobalHairpinMode       bool
-	HealthPort              uint16
-	HelpRequested           bool
-	HostnameOverride        string
-	NetworkPolicyHandler    string
-	NetworkPolicyDefault    string
-	IPTablesSyncPeriod      time.Duration
-	NetpolRollupPeriod      time.Duration
-  InjectedRoutesSyncPeriod       time.Duration
-	IpvsSyncPeriod          time.Duration
-	Kubeconfig              string
-	MasqueradeAll           bool
-	Master                  string
-	MetricsEnabled          bool
-	MetricsPath             string
-	MetricsPort             uint16
-	NodePortBindOnAllIp     bool
-	OverrideNextHop         bool
-	PeerASNs                []uint
-	PeerMultihopTtl         uint8
-	PeerPasswords           []string
-	PeerPorts               []uint
-	PeerRouters             []net.IP
-	RouterId                string
-	RoutesSyncPeriod        time.Duration
-	RunFirewall             bool
-	RunRouter               bool
-	RunServiceProxy         bool
-	Version                 bool
-	VLevel                  string
+	AdvertiseClusterIp       bool
+	AdvertiseExternalIp      bool
+	AdvertiseNodePodCidr     bool
+	AdvertiseLoadBalancerIp  bool
+	BGPGracefulRestart       bool
+	BGPPort                  uint16
+	CacheSyncTimeout         time.Duration
+	CleanupConfig            bool
+	ClusterAsn               uint
+	ClusterCIDR              string
+	DisableSrcDstCheck       bool
+	EnableCNI                bool
+	EnableiBGP               bool
+	EnableOverlay            bool
+	EnablePodEgress          bool
+	EnablePprof              bool
+	FullMeshMode             bool
+	GlobalHairpinMode        bool
+	HealthPort               uint16
+	HelpRequested            bool
+	HostnameOverride         string
+	NetworkPolicyHandler     string
+	NetworkPolicyDefault     string
+	IPTablesSyncPeriod       time.Duration
+	NetpolRollupPeriod       time.Duration
+	InjectedRoutesSyncPeriod time.Duration
+	IpvsSyncPeriod           time.Duration
+	Kubeconfig               string
+	MasqueradeAll            bool
+	Master                   string
+	MetricsEnabled           bool
+	MetricsPath              string
+	MetricsPort              uint16
+	NodePortBindOnAllIp      bool
+	OverrideNextHop          bool
+	PeerASNs                 []uint
+	PeerMultihopTtl          uint8
+	PeerPasswords            []string
+	PeerPorts                []uint
+	PeerRouters              []net.IP
+	RouterId                 string
+	RoutesSyncPeriod         time.Duration
+	RunFirewall              bool
+	RunRouter                bool
+	RunServiceProxy          bool
+	Version                  bool
+	VLevel                   string
 	// FullMeshPassword    string
 }
 
 func NewKubeRouterConfig() *KubeRouterConfig {
 	return &KubeRouterConfig{
-		CacheSyncTimeout:   1 * time.Minute,
-		IpvsSyncPeriod:     5 * time.Minute,
-		IPTablesSyncPeriod: 5 * time.Minute,
-		NetpolRollupPeriod: 1 * time.Second,
-		RoutesSyncPeriod:   5 * time.Minute,
-		InjectedRoutesSyncPeriod:       60 * time.Second,
-		EnableOverlay:      true,
+		CacheSyncTimeout:         1 * time.Minute,
+		IpvsSyncPeriod:           5 * time.Minute,
+		IPTablesSyncPeriod:       5 * time.Minute,
+		NetpolRollupPeriod:       1 * time.Second,
+		RoutesSyncPeriod:         5 * time.Minute,
+		InjectedRoutesSyncPeriod: 60 * time.Second,
+		EnableOverlay:            true,
 	}
 }
 
@@ -103,7 +103,7 @@ func (s *KubeRouterConfig) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&s.NetworkPolicyDefault, "network-policy-default-action", "allow",
 		"Decides the default action to apply when no network policies apply to a pod, either of: \"allow\", \"deny\".")
 	fs.DurationVar(&s.InjectedRoutesSyncPeriod, "injected-routes-sync-period", s.InjectedRoutesSyncPeriod,
-	"The delay between route table synchronizations  (e.g. '5s', '1m', '2h22m'). Must be greater than 0.")
+		"The delay between route table synchronizations  (e.g. '5s', '1m', '2h22m'). Must be greater than 0.")
 	fs.DurationVar(&s.IPTablesSyncPeriod, "iptables-sync-period", s.IPTablesSyncPeriod,
 		"The delay between iptables rule synchronizations (e.g. '5s', '1m'). Must be greater than 0.")
 	fs.DurationVar(&s.IpvsSyncPeriod, "ipvs-sync-period", s.IpvsSyncPeriod,

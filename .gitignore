@@ -4,3 +4,4 @@
 _output
 _cache
 Dockerfile.amd64.run
+/result
